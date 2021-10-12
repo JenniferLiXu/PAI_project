@@ -1,6 +1,8 @@
 import os
 import typing
 
+from numpy.core.arrayprint import _get_format_function
+
 from sklearn.gaussian_process.kernels import *
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -36,6 +38,9 @@ class Model(object):
         We already provide a random number generator for reproducibility.
         """
         self.rng = np.random.default_rng(seed=0)
+        kernel = 1.0 * RBF(1.0)
+        self.gpr = GaussianProcessRegressor(kernel = kernel, random_state=2021)
+
 
         # TODO: Add custom initialization for your model here if necessary
 
@@ -52,6 +57,9 @@ class Model(object):
         gp_mean = np.zeros(x.shape[0], dtype=float)
         gp_std = np.zeros(x.shape[0], dtype=float)
 
+        gp_mean, gp_std, gp_cov = self.gpr.predict(x)
+        
+
         # TODO: Use the GP posterior to form your predictions here
         predictions = gp_mean
 
@@ -65,7 +73,7 @@ class Model(object):
         """
 
         # TODO: Fit your model here
-        pass
+        self.gpr.fit(train_x, train_y)
 
 
 def cost_function(y_true: np.ndarray, y_predicted: np.ndarray) -> float:
