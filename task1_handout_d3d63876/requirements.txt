@@ -1,6 +1,8 @@
-numpy==1.21.*
+numpy>=1.14.0
 scipy==1.7.*
 pyarmor==6.7.4
 cryptography==3.0
 scikit-learn==0.24.*
 Matplotlib==3.4.*
+gpy==1.10.0
+gpytorch==1.5.1

@@ -1,6 +1,14 @@
 import os
 import typing
 
+import gpytorch
+import torch
+from gpytorch.kernels import RBFKernel, LinearKernel, ScaleKernel
+from gpytorch.models import ExactGP
+from gpytorch.likelihoods import GaussianLikelihood
+from gpytorch.means import ConstantMean
+from gpytorch.distributions import MultivariateNormal
+
 from numpy.core.arrayprint import _get_format_function
 
 from sklearn.gaussian_process.kernels import *
@@ -24,6 +32,17 @@ COST_W_NORMAL = 1.0
 COST_W_OVERPREDICT = 5.0
 COST_W_THRESHOLD = 20.0
 
+class ExactGPModel(gpytorch.models.ExactGP):
+    def __init__(self, train_x, train_y, likelihood):
+        super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        # self.covar_module = gpytorch.kernels.RFFKernel(num_samples=10)
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 class Model(object):
     """
@@ -38,11 +57,8 @@ class Model(object):
         We already provide a random number generator for reproducibility.
         """
         self.rng = np.random.default_rng(seed=0)
-        kernel = 1.0 * RBF(1.0)
-        self.gpr = GaussianProcessRegressor(kernel = kernel, random_state=2021)
-
-
-        # TODO: Add custom initialization for your model here if necessary
+        # self.covar_module = ScaleKernel(RBFKernel() + LinearKernel())
+        self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
 
     def predict(self, x: np.ndarray) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -54,13 +70,23 @@ class Model(object):
         """
 
         # TODO: Use your GP to estimate the posterior mean and stddev for each location here
+        x = torch.from_numpy(x).float()
         gp_mean = np.zeros(x.shape[0], dtype=float)
         gp_std = np.zeros(x.shape[0], dtype=float)
-
-        gp_mean, gp_std, gp_cov = self.gpr.predict(x)
         
 
-        # TODO: Use the GP posterior to form your predictions here
+        self.model.eval()
+        self.likelihood.eval()
+
+        # Test points are regularly spaced along [0,1]
+        # Make predictions by feeding model through likelihood
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            predictions = self.likelihood(self.model(x))
+        gp_mean = predictions.mean.cpu().detach().numpy()
+        gp_std = predictions.variance.cpu().detach().numpy()
+        gp_covar = predictions.covariance_matrix
+        print(gp_mean)
+        print(gp_std)
         predictions = gp_mean
 
         return predictions, gp_mean, gp_std
@@ -71,9 +97,38 @@ class Model(object):
         :param train_x: Training features as a 2d NumPy float array of shape (NUM_SAMPLES, 2)
         :param train_y: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
         """
+        train_x = torch.from_numpy(train_x).float()
+        train_y = torch.from_numpy(train_y).float()
+        model = ExactGPModel(train_x, train_y, self.likelihood)
+        training_iter = 50
 
-        # TODO: Fit your model here
-        self.gpr.fit(train_x, train_y)
+
+        # Find optimal model hyperparameters
+        model.train()
+        self.likelihood.train()
+
+        # Use the adam optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.1)  # Includes GaussianLikelihood parameters
+
+        # "Loss" for GPs - the marginal log likelihood
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, model)
+
+        for i in range(training_iter):
+            # Zero gradients from previous iteration
+            optimizer.zero_grad()
+            # Output from model
+            output = model(train_x)
+            # Calc loss and backprop gradients
+            loss = -mll(output, train_y)
+            loss.backward()
+            print('Iter %d/%d - Loss: %.3f' % (i + 1, training_iter, loss.item())) 
+            # print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+            #     i + 1, training_iter, loss.item(),
+            #     model.covar_module.base_kernel.lengthscale.item(),
+            #     model.likelihood.noise.item()
+            # ))
+            optimizer.step()
+        self.model = model
 
 
 def cost_function(y_true: np.ndarray, y_predicted: np.ndarray) -> float:
