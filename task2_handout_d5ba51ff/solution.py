@@ -118,6 +118,8 @@ class Model(object):
                     assert isinstance(self.network, BayesNet)
 
                     # TODO: Implement Bayes by backprop training here
+                    current_logits, log_prior, log_variational_posterior = self.network(batch_x)
+                    
 
                 self.optimizer.step()
 
@@ -342,12 +344,15 @@ class UnivariateGaussian(ParameterDistribution):
         self.sigma = sigma
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        # TODO: Implement this
-        return 0.0
+        assert values.size() == ()
+        middle = torch.from_numpy(np.log(2 * np.pi))
+        log_likelihood = -torch.log(self.sigma) -(0.5) * middle -(0.5) * ((values - self.mu)/2 * self.sigma)**2
+        return log_likelihood
 
     def sample(self) -> torch.Tensor:
-        # TODO: Implement this
-        raise NotImplementedError()
+        new_sample = torch.normal(self.mu, self.sigma)
+        return new_sample
+
 
 
 class MultivariateDiagonalGaussian(ParameterDistribution):
@@ -366,12 +371,16 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
         self.rho = rho
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        # TODO: Implement this
-        return 0.0
+        assert values.size() == self.mu.size()
+        p = self.mu.size()[0]
+        
+        cterm = torch.from_numpy(-0.5 * p * np.log (2 * np.pi))
+        cov_term = - 0.5 * torch.log(torch.prod(self.rho, 0))
+        mean_term = - 0.5 * torch.matmul(torch.div(values - self.mu, self.rho), values - self.mu)
+        return cterm + cov_term + mean_term
 
     def sample(self) -> torch.Tensor:
-        # TODO: Implement this
-        raise NotImplementedError()
+        raise torch.normal(self.mu, self.rho)
 
 
 def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: str, output_dir: str):
