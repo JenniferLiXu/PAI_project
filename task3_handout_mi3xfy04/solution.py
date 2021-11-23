@@ -6,6 +6,10 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 import matplotlib.pyplot as plt
 
+from GPy.kern import Matern52
+from GPy.models import GPRegression
+from GPy.core import Mapping
+
 EXTENDED_EVALUATION = False
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
 
@@ -21,8 +25,24 @@ class BO_algo(object):
         self.previous_points = []
         # IMPORTANT: DO NOT REMOVE THOSE ATTRIBUTES AND USE sklearn.gaussian_process.GaussianProcessRegressor instances!
         # Otherwise, the extended evaluation will break.
+        
+        self.f_mean = Mapping(1,1)
+        self.f_mean.f = lambda x: 0.5
+        self.f_mean.update_gradients = lambda a,b: 0
+        self.f_mean.gradients_X = lambda a,b: 0
+    
+        self.f_kernel = Matern52(input_dim=domain_x.shape[0], variance=0.5, lengthscale=0.5)
+        
+        self.f_noise = 0.15
+
         self.constraint_model = None  # TODO : GP model for the constraint function
-        self.objective_model = None  # TODO : GP model for your acquisition function
+        # TODO : GP model for your acquisition function
+        x = np.array([np.array(p[0], p[1]) for p in self.previous_points])
+        y = np.array([p[2] for p in self.previous_points])
+        self.objective_model = GPRegression(x, y, 
+                                    kernel=self.f_kernel, 
+                                    noise_var=self.f_noise**2, 
+                                    mean_function=self.f_mean)
 
     def next_recommendation(self) -> np.ndarray:
         """
@@ -34,7 +54,7 @@ class BO_algo(object):
             1 x domain.shape[0] array containing the next point to evaluate
         """
 
-        # TODO: enter your code here
+        return self.optimize_acquisition_function()
         # In implementing this function, you may use optimize_acquisition_function() defined below.
 
     def optimize_acquisition_function(self) -> np.ndarray:  # DON'T MODIFY THIS FUNCTION
@@ -82,8 +102,19 @@ class BO_algo(object):
             value of the acquisition function at x
         """
 
-        # TODO: enter your code here
-        raise NotImplementedError
+        if x.ndim == 1:
+            x = x[None,:]
+        
+        beta = 0.1
+       
+        f_mu, f_var = self.objective_model.predict(x)  
+        f_sigma = np.sqrt(f_var)
+            
+        # GP-UCB  
+        af_value = f_mu + beta*f_sigma
+        af_value = af_value.item()
+            
+        return af_value
 
     def add_data_point(self, x: np.ndarray, z: float, c: float):
         """
@@ -102,7 +133,12 @@ class BO_algo(object):
         assert x.shape == (1, 2)
         self.previous_points.append([float(x[:, 0]), float(x[:, 1]), float(z), float(c)])
         # TODO: enter your code here
-        raise NotImplementedError
+        x = np.array([np.array(p[0], p[1]) for p in self.previous_points])
+        y = np.array([p[2] for p in self.previous_points])
+        self.objective_model = GPRegression(x, y, 
+                                    kernel=self.f_kernel, 
+                                    noise_var=self.f_noise**2, 
+                                    mean_function=self.f_mean)
 
     def get_solution(self) -> np.ndarray:
         """
@@ -114,8 +150,7 @@ class BO_algo(object):
             1 x domain.shape[0] array containing the optimal solution of the problem
         """
 
-        # TODO: enter your code here
-        raise NotImplementedError
+        return min(self.previous_points, key=lambda p: p[2])[:2]
 
 
 """ 
