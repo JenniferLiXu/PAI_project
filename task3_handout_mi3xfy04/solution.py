@@ -6,9 +6,9 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 import matplotlib.pyplot as plt
 
-from GPy.kern import Matern52
-from GPy.models import GPRegression
-from GPy.core import Mapping
+from sklearn.gaussian_process.kernels import Matern
+from sklearn.gaussian_process import GaussianProcessRegressor
+
 
 EXTENDED_EVALUATION = False
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
@@ -26,12 +26,8 @@ class BO_algo(object):
         # IMPORTANT: DO NOT REMOVE THOSE ATTRIBUTES AND USE sklearn.gaussian_process.GaussianProcessRegressor instances!
         # Otherwise, the extended evaluation will break.
         
-        self.f_mean = Mapping(1,1)
-        self.f_mean.f = lambda x: 0.5
-        self.f_mean.update_gradients = lambda a,b: 0
-        self.f_mean.gradients_X = lambda a,b: 0
     
-        self.f_kernel = Matern52(input_dim=domain_x.shape[0], variance=0.5, lengthscale=0.5)
+        self.f_kernel = 1.0 * Matern(length_scale=1.0, nu=1.5)
         
         self.f_noise = 0.15
 
@@ -39,10 +35,7 @@ class BO_algo(object):
         # TODO : GP model for your acquisition function
         x = np.array([np.array(p[0], p[1]) for p in self.previous_points])
         y = np.array([p[2] for p in self.previous_points])
-        self.objective_model = GPRegression(x, y, 
-                                    kernel=self.f_kernel, 
-                                    noise_var=self.f_noise**2, 
-                                    mean_function=self.f_mean)
+        self.objective_model = GaussianProcessRegressor(kernel=self.f_kernel)
 
     def next_recommendation(self) -> np.ndarray:
         """
@@ -135,10 +128,7 @@ class BO_algo(object):
         # TODO: enter your code here
         x = np.array([np.array(p[0], p[1]) for p in self.previous_points])
         y = np.array([p[2] for p in self.previous_points])
-        self.objective_model = GPRegression(x, y, 
-                                    kernel=self.f_kernel, 
-                                    noise_var=self.f_noise**2, 
-                                    mean_function=self.f_mean)
+        self.objective_model.fit(x, z)
 
     def get_solution(self) -> np.ndarray:
         """

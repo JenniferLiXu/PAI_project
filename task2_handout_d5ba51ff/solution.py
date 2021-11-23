@@ -119,8 +119,13 @@ class Model(object):
 
                     # TODO: Implement Bayes by backprop training here
                     current_logits, log_prior, log_variational_posterior = self.network(batch_x)
-                    loss = log_variational_posterior - log_prior + F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum')
-
+                    l1 = F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum')
+                    l2 = -log_prior
+                    # l2 = 0
+                    l3 = log_variational_posterior
+                    # l3 = 0
+                    # print(l1, l2, l3)
+                    loss =  l1  + (l2 + l3) / num_batches
                     loss.backward()
                     
 
@@ -185,10 +190,8 @@ class BayesianLayer(nn.Module):
         #  Do NOT use torch.Parameter(...) here since the prior should not be optimized!
         #  Example: self.prior = MyPrior(torch.tensor(0.0), torch.tensor(1.0))
         # self.prior = UnivariateGaussian(torch.tensor(0.0), torch.tensor(1.0))
-        self.prior = MultivariateDiagonalGaussian(
-            torch.zeros((out_features, in_features)),
-            torch.ones((out_features, in_features))
-        )
+        
+        self.prior = UnivariateGaussian(torch.tensor(0.0), torch.tensor(0.1))
         assert isinstance(self.prior, ParameterDistribution)
         assert not any(True for _ in self.prior.parameters()), 'Prior cannot have parameters'
 
@@ -202,10 +205,19 @@ class BayesianLayer(nn.Module):
         #      torch.nn.Parameter(torch.zeros((out_features, in_features))),
         #      torch.nn.Parameter(torch.ones((out_features, in_features)))
         #  )
+
+        sqrt_k = np.sqrt(1 / in_features)
         self.weights_var_posterior = MultivariateDiagonalGaussian(
-            torch.nn.Parameter(torch.zeros((out_features, in_features))),
-            torch.nn.Parameter(torch.ones((out_features, in_features)))
+            # torch.nn.Parameter(torch.rand((out_features, in_features))),
+            torch.nn.Parameter((torch.rand((out_features, in_features)) * 0.2 - 0.1)),
+            torch.nn.Parameter(torch.rand((out_features, in_features)) - 3)
+            # torch.zeros((out_features, in_features))
         )
+        # self.weights_var_posterior = MultivariateDiagonalGaussian(
+        #     torch.nn.Parameter(torch.zeros((out_features, in_features))),
+        #     torch.nn.Parameter(torch.ones((out_features, in_features)))
+        # )
+
 
         assert isinstance(self.weights_var_posterior, ParameterDistribution)
         assert any(True for _ in self.weights_var_posterior.parameters()), 'Weight posterior must have parameters'
@@ -214,8 +226,10 @@ class BayesianLayer(nn.Module):
             # NOTE: As for the weights, create the bias variational posterior instance here.
             #  Make sure to follow the same rules as for the weight variational posterior.
             self.bias_var_posterior = MultivariateDiagonalGaussian(
-                torch.nn.Parameter(torch.zeros(out_features)),
-                torch.nn.Parameter(torch.ones(out_features))
+                torch.nn.Parameter((torch.rand(out_features) * 0.2 - 0.1) ),
+                torch.nn.Parameter(torch.rand(out_features) - 3)
+                # torch.nn.Parameter(torch.zeros(out_features)),
+                # torch.nn.Parameter(torch.ones(out_features))
             )
 
             self.bias_prior = MultivariateDiagonalGaussian(
@@ -358,9 +372,9 @@ class UnivariateGaussian(ParameterDistribution):
         self.sigma = sigma
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
-        assert values.size() == ()
+        # assert values.size() == ()
         middle = torch.tensor(np.log(2 * np.pi))
-        log_likelihood = -torch.log(self.sigma) -(0.5) * middle -(0.5) * ((values - self.mu)/2 * self.sigma)**2
+        log_likelihood = -torch.log(self.sigma) -(0.5) * middle -(0.5) * ((values - self.mu) / self.sigma)**2
         return log_likelihood.sum()
 
     def sample(self) -> torch.Tensor:
@@ -393,7 +407,8 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
 
 
         cterm = -0.5 * np.log(2 * np.pi)
-        std = F.softplus(self.rho) + 1e-6
+        # std = F.softplus(self.rho) + 1e-6
+        std = torch.log(1 + torch.exp(self.rho))
         cov_term = -torch.log(std)
         mean_term = -0.5 *((values - self.mu) / std) ** 2
 
@@ -401,11 +416,12 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
 
     def sample(self) -> torch.Tensor:
         # print(torch.isnan(self.rho).sum())
-        std = F.softplus(self.rho) + 1e-6
+        # std = F.softplus(self.rho) + 1e-6
+        std = torch.log(1 + torch.exp(self.rho))
         # if any(_ < 0 for _ in std.flatten()):
         #     print(std)
         # print("!!!!!!!!!", std.min())
-        eps = self.mu.data.new(self.mu.size()).normal_()
+        eps = torch.normal(0.0, 1.0, size=self.mu.size())
         return self.mu + std * eps
         # return torch.normal(self.mu, std)
 
@@ -595,11 +611,11 @@ class DenseNet(nn.Module):
 
 
 def main():
-    raise RuntimeError(
-        'This main method is for illustrative purposes only and will NEVER be called by the checker!\n'
-        'The checker always calls run_solution directly.\n'
-        'Please implement your solution exclusively in the methods and classes mentioned in the task description.'
-    )
+    # raise RuntimeError(
+    #     'This main method is for illustrative purposes only and will NEVER be called by the checker!\n'
+    #     'The checker always calls run_solution directly.\n'
+    #     'Please implement your solution exclusively in the methods and classes mentioned in the task description.'
+    # )
 
     # Load training data
     data_dir = os.curdir
