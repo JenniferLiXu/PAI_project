@@ -119,6 +119,9 @@ class Model(object):
 
                     # TODO: Implement Bayes by backprop training here
                     current_logits, log_prior, log_variational_posterior = self.network(batch_x)
+                    loss = log_variational_posterior - log_prior + F.nll_loss(F.log_softmax(current_logits, dim=1), batch_y, reduction='sum')
+
+                    loss.backward()
                     
 
                 self.optimizer.step()
@@ -181,7 +184,11 @@ class BayesianLayer(nn.Module):
         #  You can create constants using torch.tensor(...).
         #  Do NOT use torch.Parameter(...) here since the prior should not be optimized!
         #  Example: self.prior = MyPrior(torch.tensor(0.0), torch.tensor(1.0))
-        self.prior = UnivariateGaussian(torch.tensor(0.0), torch.tensor(1.0))
+        # self.prior = UnivariateGaussian(torch.tensor(0.0), torch.tensor(1.0))
+        self.prior = MultivariateDiagonalGaussian(
+            torch.zeros((out_features, in_features)),
+            torch.ones((out_features, in_features))
+        )
         assert isinstance(self.prior, ParameterDistribution)
         assert not any(True for _ in self.prior.parameters()), 'Prior cannot have parameters'
 
@@ -209,6 +216,11 @@ class BayesianLayer(nn.Module):
             self.bias_var_posterior = MultivariateDiagonalGaussian(
                 torch.nn.Parameter(torch.zeros(out_features)),
                 torch.nn.Parameter(torch.ones(out_features))
+            )
+
+            self.bias_prior = MultivariateDiagonalGaussian(
+                torch.zeros((out_features)),
+                torch.ones((out_features))
             )
             assert isinstance(self.bias_var_posterior, ParameterDistribution)
             assert any(True for _ in self.bias_var_posterior.parameters()), 'Bias posterior must have parameters'
@@ -239,15 +251,17 @@ class BayesianLayer(nn.Module):
 
         weights = self.weights_var_posterior.sample()
         log_variational_posterior += self.weights_var_posterior.log_likelihood(weights)
-        for element in weights.flatten():
-            log_prior += self.prior.log_likelihood(element)
+        # for element in weights.flatten():
+        #     log_prior += self.prior.log_likelihood(element)
+        log_prior += self.prior.log_likelihood(weights)
 
 
         if self.use_bias:
             bias = self.bias_var_posterior.sample()
-            log_variational_posterior += self.bias_var_posterior(bias)
-            for element in bias.flatten():
-                log_prior += self.prior.log_likelihood(element)
+            log_variational_posterior += self.bias_var_posterior.log_likelihood(bias)
+            # for element in bias.flatten():
+            #     log_prior += self.prior.log_likelihood(element)
+            log_prior += self.bias_prior.log_likelihood(bias)
 
         return F.linear(inputs, weights, bias), log_prior, log_variational_posterior
 
@@ -345,9 +359,9 @@ class UnivariateGaussian(ParameterDistribution):
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
         assert values.size() == ()
-        middle = torch.from_numpy(np.log(2 * np.pi))
+        middle = torch.tensor(np.log(2 * np.pi))
         log_likelihood = -torch.log(self.sigma) -(0.5) * middle -(0.5) * ((values - self.mu)/2 * self.sigma)**2
-        return log_likelihood
+        return log_likelihood.sum()
 
     def sample(self) -> torch.Tensor:
         new_sample = torch.normal(self.mu, self.sigma)
@@ -372,15 +386,28 @@ class MultivariateDiagonalGaussian(ParameterDistribution):
 
     def log_likelihood(self, values: torch.Tensor) -> torch.Tensor:
         assert values.size() == self.mu.size()
-        p = self.mu.size()[0]
         
-        cterm = torch.from_numpy(-0.5 * p * np.log (2 * np.pi))
-        cov_term = - 0.5 * torch.log(torch.prod(self.rho, 0))
-        mean_term = - 0.5 * torch.matmul(torch.div(values - self.mu, self.rho), values - self.mu)
-        return cterm + cov_term + mean_term
+        # cterm = torch.tensor(-0.5 * p * np.log (2 * np.pi))
+        # cov_term = - 0.5 * torch.log(torch.prod(self.rho, 0))
+        # mean_term = - 0.5 * torch.matmul(torch.div(values - self.mu, self.rho).flatten(), (values - self.mu).flatten())
+
+
+        cterm = -0.5 * np.log(2 * np.pi)
+        std = F.softplus(self.rho) + 1e-6
+        cov_term = -torch.log(std)
+        mean_term = -0.5 *((values - self.mu) / std) ** 2
+
+        return (cterm + cov_term + mean_term).sum()
 
     def sample(self) -> torch.Tensor:
-        raise torch.normal(self.mu, self.rho)
+        # print(torch.isnan(self.rho).sum())
+        std = F.softplus(self.rho) + 1e-6
+        # if any(_ < 0 for _ in std.flatten()):
+        #     print(std)
+        # print("!!!!!!!!!", std.min())
+        eps = self.mu.data.new(self.mu.size()).normal_()
+        return self.mu + std * eps
+        # return torch.normal(self.mu, std)
 
 
 def evaluate(model: Model, eval_loader: torch.utils.data.DataLoader, data_dir: str, output_dir: str):
