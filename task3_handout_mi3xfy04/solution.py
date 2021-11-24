@@ -6,8 +6,12 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 import matplotlib.pyplot as plt
 
-from sklearn.gaussian_process.kernels import Matern
+from scipy.stats import norm
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel
 from sklearn.gaussian_process import GaussianProcessRegressor
+
+import warnings
+warnings.filterwarnings("ignore")
 
 
 EXTENDED_EVALUATION = False
@@ -23,18 +27,17 @@ class BO_algo(object):
 
         # TODO: enter your code here
         self.previous_points = []
+        self.eps = 1e-5
         # IMPORTANT: DO NOT REMOVE THOSE ATTRIBUTES AND USE sklearn.gaussian_process.GaussianProcessRegressor instances!
         # Otherwise, the extended evaluation will break.
         
     
-        self.f_kernel = 1.0 * Matern(length_scale=1.0, nu=1.5)
-        
-        self.f_noise = 0.15
+        self.f_kernel = RBF(length_scale=1.5, length_scale_bounds=(1e-10, 100000.0)) + ConstantKernel(constant_value=1.5, constant_value_bounds=(1e-10, 100000.0))
+        self.c_kernel =  RBF(length_scale=2, length_scale_bounds=(1e-10, 100000.0)) + ConstantKernel(constant_value=3.5, constant_value_bounds=(1e-10, 100000.0))
 
-        self.constraint_model = None  # TODO : GP model for the constraint function
+        # TODO : GP model for the constraint function
         # TODO : GP model for your acquisition function
-        x = np.array([np.array(p[0], p[1]) for p in self.previous_points])
-        y = np.array([p[2] for p in self.previous_points])
+        self.constraint_model = GaussianProcessRegressor(kernel=self.c_kernel) 
         self.objective_model = GaussianProcessRegressor(kernel=self.f_kernel)
 
     def next_recommendation(self) -> np.ndarray:
@@ -46,7 +49,18 @@ class BO_algo(object):
         recommendation: np.ndarray
             1 x domain.shape[0] array containing the next point to evaluate
         """
-
+        # history = []
+        # counter = 0
+        # while counter < 3:
+        #     x = self.optimize_acquisition_function()
+        #     c_mu, c_sigma = self.constraint_model.predict(x, return_std=True)
+        #     c_sigma += self.eps
+        #     prC = norm(c_mu, c_sigma).cdf(0)
+        #     history.append((x, prC))
+        #     # if random.random() < prC:
+        #     #     return x
+        #     counter += 1
+        # return min(history, key=lambda x: x[1])[0]
         return self.optimize_acquisition_function()
         # In implementing this function, you may use optimize_acquisition_function() defined below.
 
@@ -98,16 +112,27 @@ class BO_algo(object):
         if x.ndim == 1:
             x = x[None,:]
         
-        beta = 0.1
+        beta = 0.5
        
-        f_mu, f_var = self.objective_model.predict(x)  
-        f_sigma = np.sqrt(f_var)
+        f_mu, f_sigma = self.objective_model.predict(x, return_std=True)  
+        c_mu, c_sigma = self.constraint_model.predict(x, return_std=True)
+        f_sigma += self.eps
+        c_sigma += self.eps
             
         # GP-UCB  
         af_value = f_mu + beta*f_sigma
         af_value = af_value.item()
+
+        # # Expected Improvement  
+        # with np.errstate(divide='warn'):
+        #     Z =  (f_mu - self.f_max - self.xi) / f_sigma
+        #     af_value = f_sigma * (Z * norm.cdf(Z) + norm.pdf(Z))
+        #     af_value[f_sigma == 0.0] == 0.0
+        #     af_value = af_value.item()
+
+        prC = norm(c_mu, c_sigma).cdf(0)
             
-        return af_value
+        return af_value * prC
 
     def add_data_point(self, x: np.ndarray, z: float, c: float):
         """
@@ -126,9 +151,11 @@ class BO_algo(object):
         assert x.shape == (1, 2)
         self.previous_points.append([float(x[:, 0]), float(x[:, 1]), float(z), float(c)])
         # TODO: enter your code here
-        x = np.array([np.array(p[0], p[1]) for p in self.previous_points])
-        y = np.array([p[2] for p in self.previous_points])
+        x = np.array([np.array(p[:2]) for p in self.previous_points])
+        z = np.array([p[2] for p in self.previous_points])
+        c = np.array([p[3] for p in self.previous_points])
         self.objective_model.fit(x, z)
+        self.constraint_model.fit(x, c)
 
     def get_solution(self) -> np.ndarray:
         """
@@ -139,8 +166,10 @@ class BO_algo(object):
         solution: np.ndarray
             1 x domain.shape[0] array containing the optimal solution of the problem
         """
-
-        return min(self.previous_points, key=lambda p: p[2])[:2]
+        candidates = [p for p in self.previous_points if p[3] < 0]
+        if len(candidates) == 0:
+            candidates = self.previous_points
+        return min(candidates, key=lambda p: p[2])[:2]
 
 
 """ 
