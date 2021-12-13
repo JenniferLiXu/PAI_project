@@ -174,7 +174,7 @@ class VPGBuffer:
         #TODO4: currently the return is the total discounted reward for the whole episode. 
         # Replace this by computing the reward-to-go for each timepoint.
         # Hint: use the discount_cumsum function.
-        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[0] * np.ones(self.ptr-self.path_start_idx)
+        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1] * np.ones(self.ptr-self.path_start_idx)
 
         self.path_start_idx = self.ptr
 
