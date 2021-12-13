@@ -106,11 +106,16 @@ class MLPActorCritic(nn.Module):
         # Hint: This function is only called when interacting with the environment. You should use
         # `torch.no_grad` to ensure that it does not interfere with the gradient computation.
         
-        action = 
-        val_fct =
-        log_prob = 
+        with torch.no_grad():
+            action_distr, _ = self.pi(state)
+            action = action_distr.sample()
+            # print("action: ", action)
+            v = self.v(state)
+            # print("val_fct: ", v)
+            _, log_prob = self.pi(state, action)
+            # print("log_prob: ", log_prob)
 
-        return action, val_fct, log_prob
+        return action, v, log_prob
 
 
 class VPGBuffer:
@@ -213,16 +218,24 @@ class Agent:
         #TODO2: Implement this function. 
         #TODO8: Change the update rule to make use of the baseline instead of rewards-to-go.
 
+        
         obs = data['obs']
         act = data['act']
         phi = data['phi']
         ret = data['ret']
+
 
         # Before doing any computation, always call.zero_grad on the relevant optimizer
         self.pi_optimizer.zero_grad()
 
         #Hint: you need to compute a 'loss' such that its derivative with respect to the policy
         #parameters is the policy gradient. Then call loss.backwards() and pi_optimizer.step()
+
+
+        _, logp = self.ac.pi(obs, act)
+        loss_pi = - (ret * logp).mean()
+        loss_pi.backward()
+        self.pi_optimizer.step()
 
         return
 
@@ -244,6 +257,8 @@ class Agent:
         # Before doing any computation, always call.zero_grad on the relevant optimizer
         self.v_optimizer.zero_grad()
 
+
+        
         return
 
     def train(self):
@@ -337,7 +352,11 @@ class Agent:
         """
         # TODO3: Implement this function.
         # Currently, this just returns a random action.
-        return np.random.choice([0, 1, 2, 3])
+
+        with torch.no_grad():
+            action_distr, _ = self.ac.pi(obs)
+            action = action_distr.sample()
+        return action
 
 
 def main():
