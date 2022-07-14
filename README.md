@@ -7,17 +7,13 @@ Projects for successful completion of the course Probabilistic Artifical Intelli
 
 Exact bayesian inference outputting posterior probabilities, given fixed prior probabilities for sampling from three known distributions, they are: Normal, Laplace, student.
 
-Evaluation: Hellinger distance for posterior inference on 50 random datasets sampled from the DGP.
-
 
 
 ### Project1 GAUSSIAN PROCESS REGRESSION
 
 Implementation of a Gaussian Process regression applied on a real world inference problem (model air pollution and predict fine particle concentration at new coordinate locations).
-use: model selection, GP inference complexity O(n^3) and asymmetric cost handling.
+keyword: model selection, GP inference complexity O(n^3) and asymmetric cost handling.
 
-Method #1 (scikit-learn): GP regressor with optimal kernel selection via custom k-fold CV, K-means clustering to reduce sample size, custom prediction adjustment to adapt to asymmetric costs.
-Method #2 (gpytorch): GP regressor with structured kernel interpolation, custom prediction adjustment to adapt to asymmetric costs.
 
 
 
@@ -39,7 +35,7 @@ joint training of constraint and objective, acquisition function choice, constra
 
 Reinforcement learning task using Generalized Advantage Estimation (GAE)
 It is a model-free policy gradient approach with two neural networks as actor and critic respectively. The control task is to learn a policy to smoothly descend a lunar lander to the ground in between two flags with minimal fuel use and without damaging it.
-Challenges: dual neural network parametrizations, improving rewards structure, extending vanilla policy gradients with advantage estimation.
+keyword: dual neural network parametrizations, improving rewards structure, extending vanilla policy gradients with advantage estimation.
 
 
 
